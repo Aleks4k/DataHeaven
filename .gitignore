@@ -59,6 +59,7 @@ build/
 nbbuild/
 dist/
 nbdist/
+users/
 .nb-gradle/
 
 # OS generated files
