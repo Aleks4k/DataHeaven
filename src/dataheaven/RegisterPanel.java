@@ -5,7 +5,6 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
-import java.security.MessageDigest;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -43,10 +42,10 @@ public class RegisterPanel extends JPanel {
             if(cont){
                 passwordField.setBorder(new GlowBorder(Color.GRAY, 1, false));
                 usernameField.setBorder(new GlowBorder(Color.GRAY, 1, false));
-                if(UserServices.checkUser(generateUserSecret(usernameField.getText(), new String(passwordField.getPassword())))){
+                if(UserServices.checkUser(UserServices.generateUserSecret(usernameField.getText(), new String(passwordField.getPassword())))){
                     JOptionPane.showMessageDialog(this, "You are already registered.", "Registration error.", 0);
                 } else {
-                    boolean registered = UserServices.registerUser(generateUserSecret(usernameField.getText(), new String(passwordField.getPassword())));
+                    boolean registered = UserServices.registerUser(UserServices.generateUserSecret(usernameField.getText(), new String(passwordField.getPassword())));
                     if(!registered){
                         JOptionPane.showMessageDialog(this, "Error happend during registration.", "Registration error.", 0);
                     } else {
@@ -66,25 +65,5 @@ public class RegisterPanel extends JPanel {
         cs.gridx=1;cs.gridy=1;add(passwordField, cs);
         cs.gridx=0;cs.gridy=2;cs.gridwidth=2;add(registerBtn, cs);
         cs.gridx=0;cs.gridy=3;cs.gridwidth=2;add(switchButton, cs);
-    }
-    private static String generateUserSecret(String str1, String str2) {
-        StringBuilder sb = new StringBuilder();
-        for (char ch1 : str1.toCharArray()) {
-            for (char ch2 : str2.toCharArray()) {
-                sb.append(ch1);
-                sb.append(ch2);
-            }
-        }
-        try {
-            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = messageDigest.digest(sb.toString().getBytes());
-            StringBuilder hexStringBuilder = new StringBuilder();
-            for (byte hashByte : hashBytes) {
-                hexStringBuilder.append(String.format("%02X", hashByte));
-            }
-            return hexStringBuilder.toString();
-        } catch(Exception e){
-            return null;
-        }
     }
 }

@@ -23,7 +23,6 @@ import javax.swing.tree.TreePath;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
@@ -33,6 +32,7 @@ import java.util.Date;
 import java.util.Vector;
 import javax.crypto.Cipher;
 import javax.crypto.CipherOutputStream;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.swing.JFileChooser;
@@ -43,7 +43,7 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 import javax.swing.tree.DefaultTreeModel;
-
+//TODO: Vidi da li one skrivene kolone služe ičemu...
 public class FilePanel extends JPanel {
     private Icon addFolderIcon = UIManager.getIcon("FileChooser.newFolderIcon");
     private Icon deleteIcon = UIManager.getIcon("FileView.computerIcon");
@@ -58,8 +58,7 @@ public class FilePanel extends JPanel {
     private JScrollPane treeScrollPane;
     private byte[] binaryKey;
     public FilePanel() {
-        BigInteger decimalValue = new BigInteger(DataHeaven.usersecretkey, 16);
-        binaryKey = binaryStringToByteArray(decimalValue.toString(2));
+        binaryKey = hexStringToByteArray(DataHeaven.usersecretkey);
         fp_this = this;
         cardPanel.setBorder(new EmptyBorder(0, 0, 0, 0));
         setLayout(new BorderLayout());
@@ -90,10 +89,18 @@ public class FilePanel extends JPanel {
                 try {
                     String inputValue = JOptionPane.showInputDialog(fp_this, "Please, input folder name.");
                     SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                    Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                    cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
+                    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                    SecureRandom random = new SecureRandom();
+                    //IZ ZA ŠIFROVANJE FOLDER IMENA.
+                    byte[] iv_fn = new byte[16];
+                    random.nextBytes(iv_fn);
+                    GCMParameterSpec gcmSpec = new GCMParameterSpec(16 * 8, iv_fn);
+                    cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, gcmSpec);
                     byte[] ciphertextBytes = cipher.doFinal(inputValue.getBytes());
-                    StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
+                    StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length + 2 * iv_fn.length);
+                    for (byte b : iv_fn) {
+                        hexStringBuilder.append(String.format("%02X", b));
+                    }
                     for (byte b : ciphertextBytes) {
                         hexStringBuilder.append(String.format("%02X", b));
                     }
@@ -122,20 +129,28 @@ public class FilePanel extends JPanel {
                     if (result == JFileChooser.APPROVE_OPTION) {
                         File selectedFile = fileChooser.getSelectedFile();
                         SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                        cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
+                        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
                         StringBuilder sb_name = new StringBuilder();
+                        //IV ZA ŠIFROVANJE FAJL PODATAKA.
                         byte[] iv = new byte[16]; // IV size is 16 bytes for AES
                         SecureRandom random = new SecureRandom();
                         random.nextBytes(iv);
                         IvParameterSpec ivSpec = new IvParameterSpec(iv);
+                        //IZ ZA ŠIFROVANJE FAJL IMENA.
+                        byte[] iv_fn = new byte[16];
+                        random.nextBytes(iv_fn);
                         sb_name.append("|");
                         sb_name.append(selectedFile.getName());
                         sb_name.append("|");
                         sb_name.append(Base64.getEncoder().encodeToString(ivSpec.getIV()));
                         sb_name.append("|");
+                        GCMParameterSpec gcmSpec = new GCMParameterSpec(16 * 8, iv_fn);
+                        cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, gcmSpec);
                         byte[] ciphertextBytes = cipher.doFinal(sb_name.toString().getBytes());
-                        StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
+                        StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length + 2 * iv_fn.length);
+                        for (byte b : iv_fn) {
+                            hexStringBuilder.append(String.format("%02X", b));
+                        }
                         for (byte b : ciphertextBytes) {
                             hexStringBuilder.append(String.format("%02X", b));
                         }
@@ -171,76 +186,49 @@ public class FilePanel extends JPanel {
                         StringBuilder fpath = new StringBuilder();
                         if (result == JOptionPane.YES_OPTION) {
                             fpath.append(threePath);
-                            DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) selectedPath.getLastPathComponent();
-                            if (selectedNode.getUserObject() instanceof NodeInfo) { //Fajl.
-                                for (Object t : selectedPath.getPath()) {
-                                    if (!t.toString().equals("Your Files")) {
-                                        DefaultMutableTreeNode currentNode = (DefaultMutableTreeNode) t;
-                                        if (currentNode.getUserObject() instanceof NodeInfo) { //Šifrujemo kao fajl
-                                            fpath.append("\\!");
-                                            NodeInfo nodeInfoObject = (NodeInfo) selectedNode.getUserObject();
-                                            SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                                            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                                            cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
-                                            StringBuilder sb_name = new StringBuilder();
-                                            sb_name.append("|");
-                                            sb_name.append(nodeInfoObject.getVisibleMessage());
-                                            sb_name.append("|");
-                                            sb_name.append(nodeInfoObject.getHiddenMessage());
-                                            sb_name.append("|");
-                                            byte[] ciphertextBytes = cipher.doFinal(sb_name.toString().getBytes());
-                                            StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
-                                            for (byte b : ciphertextBytes) {
-                                                hexStringBuilder.append(String.format("%02X", b));
-                                            }
-                                            fpath.append(hexStringBuilder.toString());
-                                        } else { //Šifrujemo kao folder.
-                                            fpath.append("\\!");
-                                            String fileNameOpen = t.toString();
-                                            SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                                            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                                            cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
-                                            byte[] ciphertextBytes = cipher.doFinal(fileNameOpen.getBytes());
-                                            StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
-                                            for (byte b : ciphertextBytes) {
-                                                hexStringBuilder.append(String.format("%02X", b));
-                                            }
-                                            fpath.append(hexStringBuilder.toString());
-                                        }
+                            for (Object o : selectedPath.getPath()){
+                                DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) o;
+                                if(!selectedNode.getUserObject().equals("Your Files")){
+                                    fpath.append("\\!");
+                                    NodeInfo nodeInfoObject = (NodeInfo) selectedNode.getUserObject();
+                                    SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
+                                    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                                    byte[] iv_fn = hexStringToByteArray(nodeInfoObject.getIvFileName());
+                                    GCMParameterSpec gcmSpec = new GCMParameterSpec(16 * 8, iv_fn);
+                                    cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, gcmSpec);
+                                    StringBuilder sb_name = new StringBuilder();
+                                    if (!nodeInfoObject.getIvFile().isEmpty()) { //Ovo znači da je file izabran.
+                                        sb_name.append("|");
+                                        sb_name.append(nodeInfoObject.getVisibleMessage());
+                                        sb_name.append("|");
+                                        sb_name.append(nodeInfoObject.getIvFile());
+                                        sb_name.append("|");
+                                    } else {
+                                        sb_name.append(nodeInfoObject.getVisibleMessage());
                                     }
-                                }
-                                Files.delete(Path.of(fpath.toString()));
-                                initFileList(model, threePath, binaryKey);
-                                DefaultTreeModel model = (DefaultTreeModel) fl.getModel();
-                                DefaultMutableTreeNode rootToRemove = (DefaultMutableTreeNode) model.getRoot();
-                                rootToRemove.removeAllChildren();
-                                model.setRoot(getFileTree(new File(threePath), binaryKey));
-                                model.reload();
-                            } else { //Folder.
-                                for (Object t : selectedPath.getPath()) {
-                                    if (!t.toString().equals("Your Files")) {
-                                        fpath.append("\\!");
-                                        String fileNameOpen = t.toString();
-                                        SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                                        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                                        cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
-                                        byte[] ciphertextBytes = cipher.doFinal(fileNameOpen.getBytes());
-                                        StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
-                                        for (byte b : ciphertextBytes) {
-                                            hexStringBuilder.append(String.format("%02X", b));
-                                        }
-                                        fpath.append(hexStringBuilder.toString());
+                                    byte[] ciphertextBytes = cipher.doFinal(sb_name.toString().getBytes());
+                                    StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length + 2 * iv_fn.length);
+                                    for (byte b : iv_fn) {
+                                        hexStringBuilder.append(String.format("%02X", b));
                                     }
+                                    for (byte b : ciphertextBytes) {
+                                        hexStringBuilder.append(String.format("%02X", b));
+                                    }
+                                    fpath.append(hexStringBuilder.toString());
                                 }
-                                System.out.println("Folder: " + fpath.toString());
-                                deleteFolder(new File(fpath.toString()));
-                                initFileList(model, threePath, binaryKey);
-                                DefaultTreeModel model = (DefaultTreeModel) fl.getModel();
-                                DefaultMutableTreeNode rootToRemove = (DefaultMutableTreeNode) model.getRoot();
-                                rootToRemove.removeAllChildren();
-                                model.setRoot(getFileTree(new File(threePath), binaryKey));
-                                model.reload();
                             }
+                            var file = new File(fpath.toString());
+                            if(file.isDirectory()){
+                                deleteFolder(file);
+                            } else {
+                                file.delete();
+                            }
+                            initFileList(model, threePath, binaryKey);
+                            DefaultTreeModel model = (DefaultTreeModel) fl.getModel();
+                            DefaultMutableTreeNode rootToRemove = (DefaultMutableTreeNode) model.getRoot();
+                            rootToRemove.removeAllChildren();
+                            model.setRoot(getFileTree(new File(threePath), binaryKey));
+                            model.reload();
                         }
                     } else {
                         JOptionPane.showMessageDialog(fp_this, "Please select file first.", "Delete error.", 0);
@@ -256,60 +244,55 @@ public class FilePanel extends JPanel {
                 try{
                     TreePath selectedPath = fl.getSelectionPath();
                     StringBuilder fpath = new StringBuilder();
-                    if (selectedPath != null && !selectedPath.getLastPathComponent().toString().equals("Your Files")) {
-                        DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) selectedPath.getLastPathComponent();
-                        if (selectedNode.getUserObject() instanceof NodeInfo) { //Fajl.
-                            JFileChooser fileChooser = new JFileChooser();
-                            fileChooser.setSelectedFile(new File(selectedPath.getLastPathComponent().toString()));
-                            int result = fileChooser.showSaveDialog(null);
-                            if (result == JFileChooser.APPROVE_OPTION) {
-                                IvParameterSpec ivSpec = null;
-                                fpath.append(threePath);
-                                for (Object t : selectedPath.getPath()) {
-                                    if (!t.toString().equals("Your Files")) {
-                                        DefaultMutableTreeNode currentNode = (DefaultMutableTreeNode) t;
-                                        if (currentNode.getUserObject() instanceof NodeInfo) { //Šifrujemo kao fajl
-                                            fpath.append("\\!");
-                                            NodeInfo nodeInfoObject = (NodeInfo) selectedNode.getUserObject();
-                                            SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                                            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                                            cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
-                                            StringBuilder sb_name = new StringBuilder();
-                                            sb_name.append("|");
-                                            sb_name.append(nodeInfoObject.getVisibleMessage());
-                                            sb_name.append("|");
-                                            sb_name.append(nodeInfoObject.getHiddenMessage());
-                                            sb_name.append("|");
-                                            ivSpec = new IvParameterSpec(Base64.getDecoder().decode(nodeInfoObject.getHiddenMessage()));
-                                            byte[] ciphertextBytes = cipher.doFinal(sb_name.toString().getBytes());
-                                            StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
-                                            for (byte b : ciphertextBytes) {
-                                                hexStringBuilder.append(String.format("%02X", b));
-                                            }
-                                            fpath.append(hexStringBuilder.toString());
-                                        } else { //Šifrujemo kao folder.
-                                            fpath.append("\\!");
-                                            String fileNameOpen = t.toString();
-                                            SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                                            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                                            cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
-                                            byte[] ciphertextBytes = cipher.doFinal(fileNameOpen.getBytes());
-                                            StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
-                                            for (byte b : ciphertextBytes) {
-                                                hexStringBuilder.append(String.format("%02X", b));
-                                            }
-                                            fpath.append(hexStringBuilder.toString());
-                                        }
-                                    }
-                                }
-                                SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                                decryptFile(secretKeySpec, ivSpec, fpath.toString(), Path.of(fileChooser.getSelectedFile().getAbsolutePath()));
-                            }
-                        } else {
-                            JOptionPane.showMessageDialog(fp_this, "Please select file not folder.", "Download error.", 0);
-                        }
-                    } else {
+                    DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) selectedPath.getLastPathComponent();
+                    if(selectedNode.getUserObject().equals("Your Files")){
                         JOptionPane.showMessageDialog(fp_this, "Please select file.", "Download error.", 0);
+                        return;
+                    }
+                    NodeInfo nodeInfoObject = (NodeInfo) selectedNode.getUserObject();
+                    if(nodeInfoObject.getIvFile().isEmpty()){
+                        JOptionPane.showMessageDialog(fp_this, "Please select file not folder.", "Download error.", 0);
+                        return;
+                    }
+                    IvParameterSpec ivSpec = new IvParameterSpec(Base64.getDecoder().decode(nodeInfoObject.getIvFile()));
+                    JFileChooser fileChooser = new JFileChooser();
+                    fileChooser.setSelectedFile(new File(selectedNode.toString()));
+                    int result = fileChooser.showSaveDialog(null);
+                    if (result == JFileChooser.APPROVE_OPTION) {
+                        fpath.append(threePath);
+                        for (Object o : selectedPath.getPath()){
+                            selectedNode = (DefaultMutableTreeNode) o;
+                            if(!selectedNode.getUserObject().equals("Your Files")){
+                                fpath.append("\\!");
+                                nodeInfoObject = (NodeInfo) selectedNode.getUserObject();
+                                SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
+                                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                                byte[] iv_fn = hexStringToByteArray(nodeInfoObject.getIvFileName());
+                                GCMParameterSpec gcmSpec = new GCMParameterSpec(16 * 8, iv_fn);
+                                cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, gcmSpec);
+                                StringBuilder sb_name = new StringBuilder();
+                                if (!nodeInfoObject.getIvFile().isEmpty()) { //Ovo znači da je file izabran.
+                                    sb_name.append("|");
+                                    sb_name.append(nodeInfoObject.getVisibleMessage());
+                                    sb_name.append("|");
+                                    sb_name.append(nodeInfoObject.getIvFile());
+                                    sb_name.append("|");
+                                } else {
+                                    sb_name.append(nodeInfoObject.getVisibleMessage());
+                                }
+                                byte[] ciphertextBytes = cipher.doFinal(sb_name.toString().getBytes());
+                                StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length + 2 * iv_fn.length);
+                                for (byte b : iv_fn) {
+                                    hexStringBuilder.append(String.format("%02X", b));
+                                }
+                                for (byte b : ciphertextBytes) {
+                                    hexStringBuilder.append(String.format("%02X", b));
+                                }
+                                fpath.append(hexStringBuilder.toString());
+                            }
+                        }
+                        SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
+                        decryptFile(secretKeySpec, ivSpec, fpath.toString(), Path.of(fileChooser.getSelectedFile().getAbsolutePath()));
                     }
                 }catch(Exception ex){}
             }
@@ -323,7 +306,7 @@ public class FilePanel extends JPanel {
         threePath = latest_file = sb.toString();
         fl = new JTree(getFileTree(new File(threePath), binaryKey));
         treeScrollPane = new JScrollPane(fl);
-        String[] columnName = {"Name", "Date modified", "Type", "Size", "IV-Hidden"};
+        String[] columnName = {"Name", "Date modified", "Type", "Size", "IV-Hidden", "IV-FN-Hidden"};
         Object[][] data = {};
         model = new DefaultTableModel(data, columnName) {
             @Override
@@ -339,11 +322,12 @@ public class FilePanel extends JPanel {
                         Long.class;
                     case 4 ->
                         String.class;
+                    case 5 ->
+                        String.class;
                     default ->
                         Long.class;
                 };
             }
-
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -351,28 +335,49 @@ public class FilePanel extends JPanel {
         };
         JTable files = new JTable(model);
         hideColumn(files, 4);
+        hideColumn(files, 5);
         files.setAutoCreateRowSorter(true);
         initFileList(model, threePath, binaryKey);
         TreeSelectionListener tsl = (TreeSelectionEvent event) -> {
             TreePath path = event.getPath();
             StringBuilder strb = new StringBuilder();
             strb.append(threePath);
-            for (String file : path.toString().split(",")) {
-                String normal = file.replace("[", "").replace("]", "").trim();
-                if (!normal.equals("Your Files")) {
+            for (Object o : path.getPath()){
+                DefaultMutableTreeNode selectedNode = (DefaultMutableTreeNode) o;
+                if(!selectedNode.getUserObject().equals("Your Files")){
                     try {
+                        NodeInfo nodeInfoObject = (NodeInfo) selectedNode.getUserObject();
+                        String iv_fn_String = nodeInfoObject.getIvFileName();
+                        String iv_String = nodeInfoObject.getIvFile();
+                        byte[] iv_fn = hexStringToByteArray(iv_fn_String);
+                        GCMParameterSpec gcmSpec = new GCMParameterSpec(16 * 8, iv_fn);
                         strb.append("\\");
+                        StringBuilder sb_name = new StringBuilder();
+                        if (!iv_String.isEmpty()) { //Ovo znači da je file izabran.
+                            sb_name.append("|");
+                            sb_name.append(nodeInfoObject.getVisibleMessage());
+                            sb_name.append("|");
+                            sb_name.append(iv_String);
+                            sb_name.append("|");
+                        } else {
+                            sb_name.append(nodeInfoObject.getVisibleMessage());
+                        }
                         SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
-                        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                        cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec);
-                        byte[] ciphertextBytes = cipher.doFinal(normal.getBytes());
-                        StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length);
+                        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                        cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, gcmSpec);
+                        byte[] ciphertextBytes = cipher.doFinal(sb_name.toString().getBytes());
+                        StringBuilder hexStringBuilder = new StringBuilder(2 * ciphertextBytes.length + 2 * iv_fn.length);
+                        for (byte b : iv_fn) {
+                            hexStringBuilder.append(String.format("%02X", b));
+                        }
                         for (byte b : ciphertextBytes) {
                             hexStringBuilder.append(String.format("%02X", b));
                         }
                         strb.append("!");
                         strb.append(hexStringBuilder.toString());
-                    } catch (Exception ex) {
+                    }
+                    catch (Exception ex){
+                        
                     }
                 }
             }
@@ -446,9 +451,13 @@ public class FilePanel extends JPanel {
                 try {
                     SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
                     String tempName = file.getName().replace("!", "");
+                    String iv_fn = tempName.substring(0, 32); //Prvih 32 znaka su IV u hex formatu.
+                    tempName = tempName.substring(32); //Uklanjamo prvih 32 znaka koji su IV u hex formatu.
                     byte[] ciphertextBytes = hexStringToByteArray(tempName);
-                    Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                    cipher.init(Cipher.DECRYPT_MODE, secretKeySpec);
+                    byte[] iv = hexStringToByteArray(iv_fn);
+                    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                    GCMParameterSpec gcmSpec = new GCMParameterSpec(16 * 8, iv);
+                    cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, gcmSpec);
                     byte[] decryptedBytes = cipher.doFinal(ciphertextBytes);
                     if (file.isDirectory()) {
                         row.add(new String(decryptedBytes));
@@ -456,6 +465,7 @@ public class FilePanel extends JPanel {
                         row.add("Folder");
                         row.add(0L);
                         row.add("");
+                        row.add(iv_fn);
                     } else {
                         ArrayList<String> isolatedTexts = new ArrayList<>();
                         String[] substrings = new String(decryptedBytes).split("\\|");
@@ -469,6 +479,7 @@ public class FilePanel extends JPanel {
                         row.add(isolatedTexts.get(0).substring(isolatedTexts.get(0).lastIndexOf(".") + 1));
                         row.add(file.length());
                         row.add(isolatedTexts.get(1));
+                        row.add(iv_fn);
                     }
                 } catch (Exception ex) {
                 }
@@ -479,9 +490,11 @@ public class FilePanel extends JPanel {
                     row.add("Folder");
                     row.add(0L);
                     row.add("");
+                    row.add("");
                 } else {
                     row.add(file.getName().substring(file.getName().lastIndexOf(".") + 1));
                     row.add(file.length());
+                    row.add("");
                     row.add("");
                 }
             }
@@ -494,15 +507,6 @@ public class FilePanel extends JPanel {
         for (int i = 0; i < len; i += 2) {
             String byteInHex = hexString.substring(i, i + 2);
             byteArray[i / 2] = (byte) Integer.parseInt(byteInHex, 16);
-        }
-        return byteArray;
-    }
-    public static byte[] binaryStringToByteArray(String binaryString) {
-        int length = binaryString.length();
-        byte[] byteArray = new byte[length / 8];
-        for (int i = 0; i < length; i += 8) {
-            String eightBits = binaryString.substring(i, i + 8);
-            byteArray[i / 8] = (byte) Integer.parseInt(eightBits, 2);
         }
         return byteArray;
     }
@@ -520,12 +524,17 @@ public class FilePanel extends JPanel {
                     try {
                         SecretKeySpec secretKeySpec = new SecretKeySpec(binaryKey, "AES");
                         String tempName = file.getName().replace("!", "");
+                        String iv_fn = tempName.substring(0, 32); //Prvih 32 znaka su IV u hex formatu.
+                        tempName = tempName.substring(32); //Uklanjamo prvih 32 znaka koji su IV u hex formatu.
                         byte[] ciphertextBytes = hexStringToByteArray(tempName);
-                        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                        cipher.init(Cipher.DECRYPT_MODE, secretKeySpec);
+                        byte[] iv = hexStringToByteArray(iv_fn);
+                        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                        GCMParameterSpec gcmSpec = new GCMParameterSpec(16 * 8, iv);
+                        cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, gcmSpec);
                         byte[] decryptedBytes = cipher.doFinal(ciphertextBytes);
                         if (file.isDirectory()) {
-                            node = new DefaultMutableTreeNode(new String(decryptedBytes));
+                            NodeInfo nodeInfo = new NodeInfo(new String(decryptedBytes), "", iv_fn);
+                            node = new DefaultMutableTreeNode(nodeInfo);
                         } else {
                             ArrayList<String> isolatedTexts = new ArrayList<>();
                             String[] substrings = new String(decryptedBytes).split("\\|");
@@ -535,7 +544,7 @@ public class FilePanel extends JPanel {
                                 }
                             }
                             //Da možemo da vidimo i IV u Node ako npr. imamo dva fajla sa istim imenom što može da se desi treba nam on za raspoznavanje.
-                            NodeInfo nodeInfo = new NodeInfo(isolatedTexts.get(0), isolatedTexts.get(1));
+                            NodeInfo nodeInfo = new NodeInfo(isolatedTexts.get(0), isolatedTexts.get(1), iv_fn);
                             node = new DefaultMutableTreeNode(nodeInfo);
                         }
                     } catch (Exception ex) {

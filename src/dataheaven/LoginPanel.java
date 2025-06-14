@@ -7,7 +7,6 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
-import java.security.MessageDigest;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -44,9 +43,9 @@ public class LoginPanel extends JPanel {
             if(cont){
                 passwordField.setBorder(new GlowBorder(Color.GRAY, 1, false));
                 usernameField.setBorder(new GlowBorder(Color.GRAY, 1, false));
-                if(UserServices.checkUser(generateUserSecret(usernameField.getText(), new String(passwordField.getPassword())))){
-                    DataHeaven.usersecretpath = generateUserSecret(usernameField.getText(), new String(passwordField.getPassword()));
-                    DataHeaven.usersecretkey = generateUserSecret(new String(passwordField.getPassword()), usernameField.getText());
+                if(UserServices.checkUser(UserServices.generateUserSecret(usernameField.getText(), new String(passwordField.getPassword())))){
+                    DataHeaven.usersecretpath = UserServices.generateUserSecret(usernameField.getText(), new String(passwordField.getPassword()));
+                    DataHeaven.usersecretkey = UserServices.generateUserSecret(new String(passwordField.getPassword()), usernameField.getText());
                     FilePanel filePanel = new FilePanel();
                     cardPanel.add(filePanel, "files");
                     cardLayout.show(cardPanel, "files");
@@ -67,25 +66,5 @@ public class LoginPanel extends JPanel {
         cs.gridx=0;cs.gridy=2;cs.gridwidth=2;add(loginBtn, cs);
         cs.gridx=0;cs.gridy=3;add(dactxt, cs);
         cs.gridx=0;cs.gridy=4;cs.gridwidth=2;add(switchButton, cs);
-    }
-    private static String generateUserSecret(String str1, String str2) {
-        StringBuilder sb = new StringBuilder();
-        for (char ch1 : str1.toCharArray()) {
-            for (char ch2 : str2.toCharArray()) {
-                sb.append(ch1);
-                sb.append(ch2);
-            }
-        }
-        try {
-            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = messageDigest.digest(sb.toString().getBytes());
-            StringBuilder hexStringBuilder = new StringBuilder();
-            for (byte hashByte : hashBytes) {
-                hexStringBuilder.append(String.format("%02X", hashByte));
-            }
-            return hexStringBuilder.toString();
-        } catch(Exception e){
-            return null;
-        }
     }
 }
